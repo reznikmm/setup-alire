@@ -19,12 +19,40 @@ inputs:
     description: Location to install toolchain under.
     required: false
     default: ''
+  use_cache:
+    description: Whether to use a cached gnat/alr/toolchain installation from previous action runs.
+    required: false
+    default: true
 
 runs:
   using: "composite"
   steps:
-    - name: Reuse cached installation, only for default toolchain locations
-      if: ${{ inputs.toolchain_dir == '' }}
+
+    # Try to reuse cached GNAT when branch build requested
+    - name: Reuse cached GNAT whenever necessary
+      if: ${{ inputs.use_cache == 'true' && inputs.branch != '' }}
+      id: cache-gnat
+      uses: actions/cache@v3
+      with:
+        path: gnat
+        key: gnat-${{ runner.os }}-ce2020-1
+
+    # Install GNAT if branch build. On cache hit the installer just sets the path.
+    - name: Install GNAT when alr branch requested
+      if: ${{ inputs.branch != '' }}
+      uses: ada-actions/toolchain@ce2020
+      with:
+        distrib: community
+        install_dir: gnat
+
+    - shell: bash
+      run: |
+        which gnat
+        gnat --version
+
+    # We don't cache branch builds for now, as this would require to check the head commit
+    - name: Reuse cached installation
+      if: ${{ inputs.use_cache == 'true' && inputs.branch == '' }}
       id: cache-alr
       uses: actions/cache@v3
       with:
@@ -32,11 +60,20 @@ runs:
           ~/.cache/alire
           ~/.config/alire
           ./alire_install
-        key: alr-v${{ inputs.version }}-b_${{ inputs.branch }}-t_${{ inputs.toolchain }}-o_${{ runner.os }}-4
+        key: alr-v${{ inputs.version }}-b_${{ inputs.branch }}-t_${{ inputs.toolchain }}-o_${{ runner.os }}
         # .cache contains msys64 install on Windows
         # .config contains the toolchain at the default location, besides index config
-        # Final number is used to forcibly invalidate cache
+        # ./alire_install contains alr itself
 
+    # Restore alr path in case of alr cache hit.
+    - if: ${{ steps.cache-alr.outputs.cache-hit == 'true' && runner.os != 'Windows' }}
+      shell: bash
+      run: echo "$PWD/alire_install/bin" >> $GITHUB_PATH
+    - if: ${{ steps.cache-alr.outputs.cache-hit == 'true' && runner.os == 'Windows' }}
+      shell: pwsh
+      run: Add-Content $env:GITHUB_PATH "${PWD}\alire_install\bin"
+
+    # Or install alr when alr cache miss
     - if: ${{ steps.cache-alr.outputs.cache-hit != 'true' }}
       uses: alire-project/setup-alire@v1  # v1 is the actual installer, uncached
       with:
@@ -45,15 +82,7 @@ runs:
         toolchain: ${{ inputs.toolchain }}
         toolchain_dir: ${{ inputs.toolchain_dir }}
 
-    - if: ${{ steps.cache-alr.outputs.cache-hit == 'true' && runner.os != 'Windows' }}
-      shell: bash
+    - shell: bash
       run: |
-        echo "Restoring Linux/macOS PATH: $PWD/alire_install/bin"
-        echo "$PWD/alire_install/bin" >> $GITHUB_PATH
-
-    - if: ${{ steps.cache-alr.outputs.cache-hit == 'true' && runner.os == 'Windows' }}
-      shell: pwsh
-      run: |
-        echo "Restoring Windows PATH: ${PWD}\alire_install\bin"
-        Add-Content $env:GITHUB_PATH "${PWD}\alire_install\bin"
-
+        which alr
+        alr --version

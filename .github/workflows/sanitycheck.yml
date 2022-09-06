@@ -22,7 +22,8 @@ jobs:
           script: |
             core.setFailed('PRs for latest-stable@v1+cache must come from v1+cache-next')
 
-      - uses: alire-project/setup-alire@v1+cache-next
+      # REMEMBER TO SET BACK TO ALIRE-PROJECT
+      - uses: mosteo/setup-alire@v1+cache-next
 
       # Verify alr information
       - run: alr -n version
